@@ -23,54 +23,77 @@ fn main() -> anyhow::Result<()> {
     loop {
         print!("> ");
         io::stdout().flush().ok();
+
         let mut line = String::new();
         if stdin.read_line(&mut line)? == 0 {
-            break;
+            break; // EOF
         }
+
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
+
         let mut parts = line.splitn(3, ' ');
         let cmd = parts.next().unwrap();
+
         match cmd {
             "set" => {
                 let key = match parts.next() {
                     Some(k) => k,
-                    None => { println!("usage: set <key> <value>"); continue; }
+                    None => { 
+                        println!("usage: set <key> <value>"); 
+                        continue; 
+                    }
                 };
                 let value = match parts.next() {
                     Some(v) => v,
-                    None => { println!("usage: set <key> <value>"); continue; }
+                    None => { 
+                        println!("usage: set <key> <value>"); 
+                        continue; 
+                    }
                 };
-                kv.set(key, value.as_bytes())?;
-                println!("OK");
+
+                match kv.set(key, value.as_bytes()) {
+                    Ok(_) => println!("OK"),
+                    Err(e) => println!("Error: {}", e),
+                }
             }
             "get" => {
                 let key = match parts.next() {
                     Some(k) => k,
-                    None => { println!("usage: get <key>"); continue; }
+                    None => { 
+                        println!("usage: get <key>"); 
+                        continue; 
+                    }
                 };
-                match kv.get(key)? {
-                    Some(v) => println!("{}", String::from_utf8_lossy(&v)),
-                    None => println!("Key not found"),
+
+                match kv.get(key) {
+                    Ok(Some(v)) => println!("{}", String::from_utf8_lossy(&v)),
+                    Ok(None) => println!("Key not found"),
+                    Err(e) => println!("Error: {}", e),
                 }
             }
             "delete" => {
                 let key = match parts.next() {
                     Some(k) => k,
-                    None => { println!("usage: delete <key>"); continue; }
+                    None => { 
+                        println!("usage: delete <key>"); 
+                        continue; 
+                    }
                 };
-                kv.delete(key)?;
-                println!("Deleted (if key existed)");
+                match kv.delete(key) {
+                    Ok(_) => println!("Deleted"),
+                    Err(e) => println!("Error: {}", e),
+                }
             }
-            "compact" => {
-                kv.compact()?;
-                println!("Compaction finished.");
-            }
+            "compact" => match kv.compact() {
+                Ok(_) => println!("Compaction finished."),
+                Err(e) => println!("Compaction error: {}", e),
+            },
             "help" => print_help(),
             "quit" | "exit" => break,
-            other => println!("Unknown command: {}", other),
+            other => println!("Unknown command: {}. Type 'help' for available commands", other),
         }
     }
 

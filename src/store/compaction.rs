@@ -13,29 +13,24 @@ pub fn compact_segments(store: &mut KvStore) -> Result<()> {
     let next_id = store
         .segments
         .keys()
-        .cloned()
+        .copied()
         .max()
-        .map(|m| m + 1)
-        .unwrap_or(0);
+        .map_or(0, |m| m + 1);
 
     let dir = store.dir.clone();
-    // create a fresh segment file
     let mut new_seq = Segment::open(&dir, next_id)?;
-    // iterate current index and write latest value into new segment
+
     let keys: Vec<String> = store.index.kv_map.keys().cloned().collect();
 
     for key in keys {
-        if let Some((seg_id, offset, _value_len)) = store.index.get(&key) {
-            // read value from old segment
+        if let Some((seg_id, offset, _value_len)) = store.index.get(key.as_str()) {
             if let Some(seg) = store.segments.get_mut(seg_id) {
-                if let Ok(opt) = seg.read_value_at(*offset) {
-                    if let Some(value) = opt {
-                        // write into new segment and update index
-                        let off = new_seq.append(key.as_bytes(), &value)?;
+                if let Ok(Some(value)) = seg.read_value_at(*offset) {
+                    let off = new_seq.append(key.as_bytes(), &value)?;
 
-                        store.index
-                            .insert(key.clone(), next_id, off, value.len() as u64);
-                    }
+                    store
+                        .index
+                        .insert(key.to_string(), next_id, off, value.len() as u64);
                 }
             }
         }
@@ -44,17 +39,18 @@ pub fn compact_segments(store: &mut KvStore) -> Result<()> {
     let ids_to_remove: Vec<usize> = store
         .segments
         .keys()
-        .cloned()
+        .copied()
         .filter(|&id| id < next_id)
         .collect();
 
     for id in ids_to_remove {
         let fname = format!("segment-{}.dat", id);
         let path = dir.join(fname);
+        
         fs::remove_file(path)?;
+        store.segments.remove(&id);
     }
-    // replace segments map: only key next_id
-    store.segments.clear();
+
     store.segments.insert(next_id, new_seq);
     store.active_id = next_id;
 

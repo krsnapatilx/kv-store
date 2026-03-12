@@ -17,4 +17,5 @@ target/
 !.cargo/
 
 # -- data segments
-data
+data/
+tests_data/

@@ -2,7 +2,7 @@ use crate::store::index::Index;
 use crate::store::segment::Segment;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom, Write, Result};
+use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 
@@ -17,7 +17,7 @@ impl KvStore {
     /// Open or create a KvStore rooted at `dir`.
     pub fn open<P: AsRef<Path>>(dir: P) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
-        fs::create_dir(&dir)?;
+        fs::create_dir_all(&dir)?;
         // find existing segments
         let mut ids: Vec<usize> = fs::read_dir(&dir)?
             .filter_map(|res| res.ok())
@@ -33,7 +33,7 @@ impl KvStore {
         
         ids.sort_unstable();
 
-        let active_id = if ids.is_empty() { 0 } else { *ids.last().unwrap() };
+        let active_id = ids.last().copied().unwrap_or(0);
 
         // open segments
         let mut segments = HashMap::new();
@@ -55,55 +55,67 @@ impl KvStore {
             active_id,
         };
 
-        // rebuild simple index by scaning segments in order (low -> high),
-        // later records override earlier
-        let mut ordered_ids: Vec<usize> = store.segments.keys().cloned().collect();
-        ordered_ids.sort_unstable();
-
-        for id in ordered_ids {
-            // scan segment file sequentially to build index
-            let seg = store.segments.get_mut(&id).unwrap();
-            let mut pos = 0u64;
-
-            while pos < seg.len {
-                // read header: key_len + value_len
-                seg.file.seek(SeekFrom::Start(pos))?;
-                let mut buf8 = [0u8; 8];
-
-                if let Err(_) = seg.file.read_exact(&mut buf8) {
-                    break;
-                }
-
-                let key_len = u64::from_le_bytes(buf8);
-                seg.file.read_exact(&mut buf8)?;
-                let value_len = u64::from_le_bytes(buf8);
-                let mut key_buf = vec![0u8; key_len as usize];
-                seg.file.read_exact(&mut key_buf)?;
-                // we don't need to read value now, just jump
-                let key = String::from_utf8_lossy(&key_buf).to_string();
-                let record_header_size = 8 + 8;
-                let record_size = record_header_size + key_len + value_len;
-
-                if value_len == u64::MAX {
-                    // tombstone -> remove
-                    store.index.remove(&key);
-                } else {
-                    store.index.insert(key, id, pos, value_len);
-                }
-                pos += record_size;
-            }
-        }
+        store.rebuild_index()?;
         Ok(store)
     }
 
-    fn active_segment_mut(&mut self) -> &mut Segment {
-        self.segments.get_mut(&self.active_id).unwrap()
+    fn rebuild_index(&mut self) -> Result<()> {
+        let mut ordered_ids: Vec<usize> = self.segments.keys().copied().collect();
+        ordered_ids.sort_unstable();
+
+        for id in ordered_ids {
+            let seg = self.segments.get_mut(&id).ok_or_else(|| {
+                Error::new(ErrorKind::NotFound, "Segment disappeared during rebuild")
+            })?;
+
+            let mut pos = 0u64;
+
+            while pos < seg.len {
+                seg.file.seek(SeekFrom::Start(pos))?;
+
+                let mut buf8 = [0u8; 8];
+
+                if seg.file.read_exact(&mut buf8).is_err() {
+                    break;
+                }
+                let key_len = u64::from_le_bytes(buf8);
+
+                seg.file.read_exact(&mut buf8)?;
+                let value_len = u64::from_le_bytes(buf8);
+
+                let mut key_buf = vec![0u8; key_len as usize];
+                seg.file.read_exact(&mut key_buf)?;
+                let key = String::from_utf8_lossy(&key_buf).to_string();
+
+                let record_header_size = 16u64;
+                let record_size = record_header_size + key_len + value_len;
+
+                if value_len == u64::MAX {
+                    // Tombstone
+                    self.index.remove(&key);
+                } else {
+                    self.index.insert(key, id, pos, value_len);
+                }
+
+                pos += record_size;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn active_segment_mut(&mut self) -> Result<&mut Segment> {
+        self.segments
+            .get_mut(&self.active_id)
+            .ok_or_else(|| {
+                Error::new(ErrorKind::NotFound, "Active segment not found")
+            })
     }
 
     /// Set a key -> value
     pub fn set(&mut self, key: &str, value: &[u8]) -> Result<()> {
         let key_b = key.as_bytes();
-        let offset = self.active_segment_mut().append(key_b, value)?;
+        let offset = self.active_segment_mut()?.append(key_b, value)?;
 
         self.index.insert(key.to_string(), self.active_id, offset, value.len() as u64);
 
@@ -125,7 +137,7 @@ impl KvStore {
         // write tombstone with value_len == u64::MAX 
         let key_b = key.as_bytes();
         let tombstone_value_len = u64::MAX;
-        let seg = self.active_segment_mut();
+        let seg = self.active_segment_mut()?;
         
         let _offset = seg.file.seek(SeekFrom::End(0))?;
         let key_len = key_b.len() as u64;
@@ -133,7 +145,7 @@ impl KvStore {
         seg.file.write_all(&key_len.to_le_bytes())?;
         seg.file.write_all(&tombstone_value_len.to_le_bytes())?;
         seg.file.write_all(key_b)?;
-        seg.file.flush()?;
+        seg.file.sync_all()?;
         seg.len = seg.file.seek(SeekFrom::End(0))?;
         // remove from index
         self.index.remove(key);
