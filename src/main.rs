@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 
 mod store;
+
 use store::KvStore;
 
 fn print_help() {
@@ -8,17 +9,14 @@ fn print_help() {
     println!("  set <key> <value>        — set or update a key");
     println!("  get <key>                — get a value");
     println!("  delete <key>             — delete a key");
-    println!("  list                     — list keys");
-    println!("  stats                    — show simple stats");
     println!("  compact                  — run manual compaction");
     println!("  help                     — show this help");
     println!("  quit / exit              — exit");
 }
 
-fn main() -> io::Result<()> {
-    // initialize store in ./data
+fn main() -> anyhow::Result<()> {
     let mut kv = KvStore::open("data")?;
-    println!("mini-kvstore-v2 — tiny segmented KV store (Rust) — running");
+    println!("kv-store — segmented, log, compaction, index, Rust");
     print_help();
 
     let stdin = io::stdin();
@@ -45,7 +43,7 @@ fn main() -> io::Result<()> {
                     Some(v) => v,
                     None => { println!("usage: set <key> <value>"); continue; }
                 };
-                kv.set(key.to_string(), value.as_bytes().to_vec())?;
+                kv.set(key, value.as_bytes())?;
                 println!("OK");
             }
             "get" => {
@@ -53,7 +51,7 @@ fn main() -> io::Result<()> {
                     Some(k) => k,
                     None => { println!("usage: get <key>"); continue; }
                 };
-                match kv.get(key) {
+                match kv.get(key)? {
                     Some(v) => println!("{}", String::from_utf8_lossy(&v)),
                     None => println!("Key not found"),
                 }
@@ -63,26 +61,12 @@ fn main() -> io::Result<()> {
                     Some(k) => k,
                     None => { println!("usage: delete <key>"); continue; }
                 };
-                if kv.delete(key)? {
-                    println!("Deleted");
-                } else {
-                    println!("Key not found");
-                }
-            }
-            "list" => {
-                for k in kv.keys() {
-                    println!("{}", k);
-                }
-            }
-            "stats" => {
-                let (segments, keys) = kv.stats();
-                println!("Segments: {}", segments);
-                println!("Keys in memory: {}", keys);
+                kv.delete(key)?;
+                println!("Deleted (if key existed)");
             }
             "compact" => {
-                println!("Running compaction...");
                 kv.compact()?;
-                println!("Compaction done.");
+                println!("Compaction finished.");
             }
             "help" => print_help(),
             "quit" | "exit" => break,
