@@ -3,8 +3,10 @@ name = "kv-store"
 version = "0.1.0"
 edition = "2024"
 authors = ["krsnapatilx"]
+repository = "https://github.com/krsnapatilx/kv-store"
 description = "kv-store — segmented append-only KV store (learning project)"
 license = "MIT"
 
 [dependencies]
+anyhow = "1.0"
 crc32fast = "1.3"
