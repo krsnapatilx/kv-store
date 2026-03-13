@@ -9,15 +9,19 @@ fn print_help() {
     println!("  set <key> <value>        — set or update a key");
     println!("  get <key>                — get a value");
     println!("  delete <key>             — delete a key");
+    println!("  list                     — list all keys");
     println!("  compact                  — run manual compaction");
+    println!("  stats                    — show store statistics");
     println!("  help                     — show this help");
     println!("  quit / exit              — exit");
 }
 
 fn main() -> anyhow::Result<()> {
     let mut kv = KvStore::open("data")?;
-    println!("kv-store — segmented, log, compaction, index, Rust");
+    println!("kv-store — segmented log with checksums, compaction and auto-rotation");
+    println!();
     print_help();
+    println!();
 
     let stdin = io::stdin();
     loop {
@@ -87,10 +91,25 @@ fn main() -> anyhow::Result<()> {
                     Err(e) => println!("Error: {}", e),
                 }
             }
+            "list" => {
+                let keys = kv.list_keys();
+                if keys.is_empty() {
+                    println!("No keys in store");
+                } else {
+                    println!("Keys ({}):", keys.len());
+                    for key in keys {
+                        println!("  {}", key);
+                    }
+                }
+            }
             "compact" => match kv.compact() {
                 Ok(_) => println!("Compaction finished."),
                 Err(e) => println!("Compaction error: {}", e),
             },
+            "stats" => {
+                let stats = kv.stats();
+                println!("{}", stats);
+            }
             "help" => print_help(),
             "quit" | "exit" => break,
             other => println!("Unknown command: {}. Type 'help' for available commands", other),
