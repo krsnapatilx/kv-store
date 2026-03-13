@@ -11,10 +11,10 @@ The goal remains the same — build a clear, minimal system and learn every piec
 A compact, educational key–value store with a tiny CLI front-end.  
 It’s intentionally focused and incremental — each feature is implemented to teach a specific concept in storage engines:
 
-- segmented append-only log for on-disk persistence
-- in-memory index mapping keys to segment locations
-- checksums to detect corrupt records
-- manual compaction to reclaim space and merge segments
+- Segmented append-only log for on-disk persistence
+- In-memory index mapping keys to segment locations
+- Checksums to detect corrupt records
+- Manual compaction to reclaim space and merge segments
 
 This project prioritizes clarity and readability over performance or production readiness.
 
@@ -64,7 +64,7 @@ Compaction done.
 
 Implemented so far:
 
-- Segmented append-only log on disk (segment files with monotonically increasing ids)
+- **Segmented append-only log on disk (segment files with monotonically increasing ids)
 - In-memory index (HashMap) mapping keys to (segment_id, offset, length)
 - `set(key, value)` — append record to active segment and update index
 - `get(key)` — consult in-memory index and read record from segment file
@@ -79,20 +79,21 @@ The implementation aims to be small and easy to read; each module is self-contai
 
 ## 🧠 Design overview (short)
 
-- Segmented log: Writes are appended to an active segment file (e.g. `1.segment`). When the segment reaches a target size the store rolls to a new segment file.
-- In-memory index: For fast reads, the store keeps a HashMap of key → (segment_id, offset, len). On startup, the store rebuilds the index by scanning existing segments.
-- Checksums: Each record includes a checksum (CRC32 or similar) to detect corruption on read; corrupted records are ignored and logged.
-- Tombstones: Deletes are recorded as tombstone entries so the log remains append-only.
-- Manual compaction: A `compact` operation creates a new segment and copies the latest live values into it, then atomically switches files and removes old compacted segments. Compacting reclaims space and reduces read scanning.
-- Durability: Appends are synced to disk (fsync) before acknowledging writes (configurable for experimentation).
+- **Segmented log:** Writes are appended to an active segment file (e.g. `0001.segment`). When the segment reaches a target size the store rolls to a new segment file.
+- **In-memory index:** For fast reads, the store keeps a HashMap of key → (segment_id, offset, len). On startup, the store rebuilds the index by scanning existing segments.
+- **Checksums:** Each record includes a checksum (CRC32 or similar) to detect corruption on read; corrupted records are ignored and logged.
+- **Tombstones:** Deletes are recorded as tombstone entries so the log remains append-only.
+- **Manual compaction:** A `compact` operation creates a new segment and copies the latest live values into it, then atomically switches files and removes old compacted segments. Compacting reclaims space and reduces read scanning.
+- **Durability:** Appends are synced to disk (fsync) before acknowledging writes (configurable for experimentation).
 
 ---
 
 ## 🔍 File & on-disk layout (example)
 
 - data/
-  - segment_0.log
-  - segment_1.log
+  - 0001.segment
+  - 0002.segment
+  - compacted_0003.segment
 - Each segment is a sequence of records:
   - [record-header: key_len, value_len, flags, checksum] + [key bytes] + [value bytes]
 - Index (in memory): HashMap<String, (segment_id, offset, len, tombstone_flag)>
@@ -101,7 +102,7 @@ The implementation aims to be small and easy to read; each module is self-contai
 
 ## 📈 Learning Roadmap
 
-Planned/possible future work (implemented as small, focused steps):
+Planned and possible future work (implemented as small, focused steps):
 
 - Background or automatic compaction (triggered by size/ratio heuristics)
 - Checkpointing / snapshot of the in-memory index to speed up startup
@@ -120,10 +121,10 @@ Each feature will be added incrementally so the codebase stays easy to read and 
 
 Rust is an excellent fit for this kind of project because it gives:
 
-- memory safety without a garbage collector
-- explicit ownership and clear boundaries for state
-- low-level control for working with files and buffers
-- tooling and ergonomics (cargo, fmt, clippy) that encourage small, correct experiments
+- Memory safety without a garbage collector
+- Explicit ownership and clear boundaries for state
+- Low-level control for working with files and buffers
+- Tooling and ergonomics (cargo, fmt, clippy) that encourage small, correct experiments
 
 It helps me focus on the storage ideas without accidentally introducing memory bugs.
 
@@ -133,14 +134,14 @@ It helps me focus on the storage ideas without accidentally introducing memory b
 
 Typical commands supported by the CLI:
 
-- set <key> <value>       — append a key/value pair
-- get <key>               — retrieve the latest value for a key
-- delete <key>            — delete a key (tombstone)
-- list                    — list known keys (index-based)
-- compact                 — run manual compaction to produce a compacted segment
-- info                    — show store status (segments, index size, data directory)
-- help                    — show help and flags
-- quit / exit             — exit the CLI
+- `set <key> <value>` — append a key/value pair
+- `get <key>` — retrieve the latest value for a key
+- `delete <key>` — delete a key (tombstone)
+- `list` — list known keys (index-based)
+- `compact` — run manual compaction to produce a compacted segment
+- `info` — show store status (segments, index size, data directory)
+- `help` — show help and flags
+- `quit` / `exit` — exit the CLI
 
 Run `cargo run -- --help` for the exact flags and options.
 
