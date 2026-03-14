@@ -8,7 +8,6 @@ use std::fs;
 use std::io::{Error, ErrorKind, Result};
 use std::path::Path;
 
-
 pub struct KvStore {
     pub config: StoreConfig,
     pub segments: HashMap<usize, Segment>,
@@ -20,7 +19,7 @@ impl KvStore {
     /// Open store with default config
     pub fn open<P: AsRef<Path>>(dir: P) -> Result<Self> {
         let config = StoreConfig::new(dir.as_ref());
-        
+
         Self::open_with_config(config)
     }
 
@@ -39,7 +38,7 @@ impl KvStore {
                 }
             })
             .collect();
-        
+
         ids.sort_unstable();
 
         let active_id = ids.last().copied().unwrap_or(0);
@@ -59,9 +58,9 @@ impl KvStore {
             config,
             segments,
             index: Index::new(),
-            active_id
+            active_id,
         };
-        
+
         store.rebuild_index()?;
 
         Ok(store)
@@ -90,7 +89,10 @@ impl KvStore {
 
                         let key_bytes = key.as_bytes();
 
-                        let record_size = 8 + 8 + key_bytes.len() as u64 + value_opt.as_ref().map(|v| v.len() as u64).unwrap_or(0);
+                        let record_size = 8
+                            + 8
+                            + key_bytes.len() as u64
+                            + value_opt.as_ref().map(|v| v.len() as u64).unwrap_or(0);
 
                         pos += record_size;
                     }
@@ -124,7 +126,8 @@ impl KvStore {
             self.segments.insert(self.active_id, new_seg);
         }
 
-        let active_seg = self.segments
+        let active_seg = self
+            .segments
             .get_mut(&self.active_id)
             .ok_or_else(|| Error::new(ErrorKind::NotFound, "Active segment not found"))?;
 
@@ -143,7 +146,7 @@ impl KvStore {
                 .segments
                 .get_mut(&seg_id)
                 .ok_or_else(|| Error::new(ErrorKind::NotFound, "Segment not found"))?;
-                
+
             seg.read_value_at(offset)
         } else {
             Ok(None)
@@ -155,7 +158,7 @@ impl KvStore {
         if !self.index.kv_map.contains_key(key) {
             return Ok(());
         }
-        
+
         let active_seg = self
             .segments
             .get_mut(&self.active_id)
@@ -192,10 +195,10 @@ impl KvStore {
 
         let oldest_segment_id = self.segments.keys().copied().min().unwrap_or(0);
 
-        StoreStats { 
-            num_keys, 
-            num_segments, 
-            total_bytes, 
+        StoreStats {
+            num_keys,
+            num_segments,
+            total_bytes,
             active_segment_id: self.active_id,
             oldest_segment_id,
         }

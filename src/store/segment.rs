@@ -19,11 +19,8 @@ impl Segment {
             .append(true)
             .open(&path)?;
         let len = file.seek(SeekFrom::End(0))?;
-        
-        Ok(Self { 
-            file, 
-            len 
-        })
+
+        Ok(Self { file, len })
     }
 
     /// Append a record: [key_len:u64][value_len: u64][key bytes][value bytes]
@@ -38,14 +35,14 @@ impl Segment {
         self.file.write_all(value)?;
         self.file.sync_all()?;
         self.len = self.file.seek(SeekFrom::End(0))?;
-        
+
         Ok(offset)
     }
 
     pub fn append_tombstone(&mut self, key: &[u8]) -> Result<u64> {
         let offset = self.file.seek(SeekFrom::End(0))?;
         let key_len = key.len() as u64;
-        let value_len = u64::MAX;  // Tombstone
+        let value_len = u64::MAX; // Tombstone
         self.file.write_all(&key_len.to_le_bytes())?;
         self.file.write_all(&value_len.to_le_bytes())?;
         self.file.write_all(key)?;
@@ -88,7 +85,6 @@ impl Segment {
             }
             return Ok(Some((key, Some(val_buf))));
         }
-
     }
 
     pub fn read_value_at(&mut self, offset: u64) -> Result<Option<Vec<u8>>> {

@@ -14,11 +14,11 @@ pub struct RecordHeader {
 #[allow(dead_code)]
 impl RecordHeader {
     pub fn new(key_len: u32, value_len: u32, flags: u8, checksum: u32) -> Self {
-        Self { 
-            key_len, 
-            value_len, 
+        Self {
+            key_len,
+            value_len,
             flags,
-            checksum
+            checksum,
         }
     }
 
@@ -44,20 +44,20 @@ pub struct Record {
 #[allow(dead_code)]
 impl Record {
     pub fn new(key: Vec<u8>, value: Vec<u8>) -> Self {
-        Self { 
-            key, 
+        Self {
+            key,
             value: Some(value),
-            flags: 0, 
-            checksum: 0, 
+            flags: 0,
+            checksum: 0,
         }
     }
-    
+
     pub fn tombstone(key: Vec<u8>) -> Self {
-        Self { 
-            key, 
+        Self {
+            key,
             value: None,
             flags: 0,
-            checksum: 0, 
+            checksum: 0,
         }
     }
 }

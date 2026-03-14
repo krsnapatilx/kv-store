@@ -17,7 +17,7 @@ pub fn compact_segments(store: &mut KvStore) -> Result<()> {
             }
         }
     }
-    
+
     for seg_id in store.segments.keys() {
         let filename = format!("segment-{}.dat", seg_id);
         let path = data_dir.join(&filename);
@@ -30,8 +30,7 @@ pub fn compact_segments(store: &mut KvStore) -> Result<()> {
     store.active_id = 0;
     let active_seg = Segment::open(data_dir, store.active_id)?;
     store.segments.insert(store.active_id, active_seg);
-
-    for (key, value) in live_data  {
+    for (key, value) in live_data {
         let active_seg = store.segments.get_mut(&store.active_id).unwrap();
         if active_seg.is_full() {
             store.active_id += 1;
@@ -41,7 +40,8 @@ pub fn compact_segments(store: &mut KvStore) -> Result<()> {
         let seg_ref = store.segments.get_mut(&store.active_id).unwrap();
         let offset = seg_ref.append(key.as_bytes(), &value)?;
 
-        store.index
+        store
+            .index
             .insert(key, store.active_id, offset, value.len() as u64);
     }
 

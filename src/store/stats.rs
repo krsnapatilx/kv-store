@@ -1,6 +1,5 @@
 use std::fmt;
 
-
 #[derive(Debug, Clone)]
 pub struct StoreStats {
     pub num_keys: usize,
@@ -12,12 +11,12 @@ pub struct StoreStats {
 
 impl StoreStats {
     pub fn new() -> Self {
-        Self { 
-            num_keys: 0, 
-            num_segments: 0, 
-            total_bytes: 0, 
-            active_segment_id: 0, 
-            oldest_segment_id: 0 
+        Self {
+            num_keys: 0,
+            num_segments: 0,
+            total_bytes: 0,
+            active_segment_id: 0,
+            oldest_segment_id: 0,
         }
     }
 

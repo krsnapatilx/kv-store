@@ -45,16 +45,16 @@ fn main() -> anyhow::Result<()> {
             "set" => {
                 let key = match parts.next() {
                     Some(k) => k,
-                    None => { 
-                        println!("usage: set <key> <value>"); 
-                        continue; 
+                    None => {
+                        println!("usage: set <key> <value>");
+                        continue;
                     }
                 };
                 let value = match parts.next() {
                     Some(v) => v,
-                    None => { 
-                        println!("usage: set <key> <value>"); 
-                        continue; 
+                    None => {
+                        println!("usage: set <key> <value>");
+                        continue;
                     }
                 };
 
@@ -66,9 +66,9 @@ fn main() -> anyhow::Result<()> {
             "get" => {
                 let key = match parts.next() {
                     Some(k) => k,
-                    None => { 
-                        println!("usage: get <key>"); 
-                        continue; 
+                    None => {
+                        println!("usage: get <key>");
+                        continue;
                     }
                 };
 
@@ -81,9 +81,9 @@ fn main() -> anyhow::Result<()> {
             "delete" => {
                 let key = match parts.next() {
                     Some(k) => k,
-                    None => { 
-                        println!("usage: delete <key>"); 
-                        continue; 
+                    None => {
+                        println!("usage: delete <key>");
+                        continue;
                     }
                 };
                 match kv.delete(key) {
@@ -112,7 +112,10 @@ fn main() -> anyhow::Result<()> {
             }
             "help" => print_help(),
             "quit" | "exit" => break,
-            other => println!("Unknown command: {}. Type 'help' for available commands", other),
+            other => println!(
+                "Unknown command: {}. Type 'help' for available commands",
+                other
+            ),
         }
     }
 

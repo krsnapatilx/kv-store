@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -18,23 +19,23 @@ pub enum FsyncPolicy {
 }
 
 impl StoreConfig {
-    pub fn new(data_dir: &std::path::Path) -> Self {
-        Self { 
-            data_dir: data_dir.to_path_buf(), 
-            segment_size: 1024 * 1024, 
+    pub fn new(data_dir: &Path) -> Self {
+        Self {
+            data_dir: data_dir.to_path_buf(),
+            segment_size: 1024 * 1024,
             fsync_policy: FsyncPolicy::Always,
-            compaction_threshold: 3
+            compaction_threshold: 3,
         }
     }
 }
 
 impl Default for StoreConfig {
     fn default() -> Self {
-        Self { 
-            data_dir: PathBuf::from("data"), 
-            segment_size: 1024 * 1024, 
-            fsync_policy: FsyncPolicy::Always, 
-            compaction_threshold: 3 
+        Self {
+            data_dir: PathBuf::from("data"),
+            segment_size: 1024 * 1024,
+            fsync_policy: FsyncPolicy::Always,
+            compaction_threshold: 3,
         }
     }
 }

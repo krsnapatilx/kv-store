@@ -10,7 +10,7 @@ pub struct Index {
 impl Index {
     pub fn new() -> Self {
         Self {
-            kv_map: HashMap::new()
+            kv_map: HashMap::new(),
         }
     }
 
