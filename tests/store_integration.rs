@@ -3,7 +3,7 @@ use kv_store::KvStore;
 use std::fs::{create_dir_all, remove_dir_all};
 use std::path::Path;
 
-fn setup_test_dir(path: &str)  {
+fn setup_test_dir(path: &str) {
     let p = Path::new(path);
     let _ = remove_dir_all(p);
     create_dir_all(p).expect("Failed to create test directory");
@@ -88,7 +88,7 @@ fn persistence_after_reopen() -> std::io::Result<()> {
         let mut store = KvStore::open(test_dir)?;
         store.set("persistent", b"value")?;
     }
-    
+
     let mut store = KvStore::open(test_dir)?;
     assert_eq!(store.get("persistent")?, Some(b"value".to_vec()));
 
