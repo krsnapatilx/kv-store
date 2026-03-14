@@ -5,108 +5,45 @@ use std::fs;
 use std::io::Result;
 
 pub fn compact_segments(store: &mut KvStore) -> Result<()> {
-    println!("Starting compaction...");
+    let data_dir = &store.config.data_dir;
+    let mut live_data: Vec<(String, Vec<u8>)> = Vec::new();
 
-    let next_id = store
-        .segments
-        .keys()
-        .copied()
-        .max()
-        .map_or(0, |m| m + 1);
-
-    // Create temporary segment
-    let dir = store.config.data_dir.clone();
-    let temp_filename = format!("segment-{:04}.tmp", next_id);
-    let temp_path = dir.join(&temp_filename);
-
-    let final_filename = format!("segment-{:04}.data", next_id);
-    let final_path = dir.join(&final_filename);
-
-    // Write all live keys to temporary segment
-    let mut new_seq = Segment::open(&dir, next_id)?;
-
-    // We need to use a temporary file, so let's manually construct it
-    let mut temp_file = std::fs::OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(true)
-        .open(&temp_path)?;
-
-    let keys: Vec<String> = store.index.kv_map.keys().cloned().collect();
-    let mut new_index_entries = Vec::new();
-
-    for key in keys {
-        if let Some((seg_id, offset, _value_len)) = store.index.get(key.as_str()) {
-            if let Some(seg) = store.segments.get_mut(seg_id) {
-                if let Ok(Some(value)) = seg.read_value_at(*offset) {
-                    // Write to temp file
-                    use std::io::{Seek, SeekFrom, Write};
-                    let write_offset = temp_file.seek(SeekFrom::End(0))?;
-                    
-                    let key_bytes = key.as_bytes();
-                    let checksum = crate::store::record::compute_checksum(key_bytes, &value);
-                    let header = crate::store::record::RecordHeader::new(
-                        key_bytes.len() as u32,
-                        value.len() as u32,
-                        checksum,
-                    );
-
-                    header.write_to(&mut temp_file)?;
-                    temp_file.write_all(key_bytes)?;
-                    temp_file.write_all(&value)?;
-
-                    new_index_entries.push((key.clone(), next_id, write_offset, value.len() as u64));
+    for key in store.index.kv_map.keys() {
+        if let Some(&(seg_id, offset, _len)) = store.index.get(key) {
+            if let Some(seg) = store.segments.get_mut(&seg_id) {
+                if let Ok(Some(value)) = seg.read_value_at(offset) {
+                    live_data.push((key.clone(), value));
                 }
             }
         }
     }
+    
+    for seg_id in store.segments.keys() {
+        let filename = format!("segment-{}.dat", seg_id);
+        let path = data_dir.join(&filename);
+        let _ = fs::remove_file(&path);
+    }
 
-    // Sync temp file
-    temp_file.sync_all()?;
-    drop(temp_file);
+    store.segments.clear();
+    store.index.kv_map.clear();
 
-    // Atomically rename temp to final
-    fs::rename(&temp_path, &final_path)?;
+    store.active_id = 0;
+    let active_seg = Segment::open(data_dir, store.active_id)?;
+    store.segments.insert(store.active_id, active_seg);
 
-    println!("Compacted {} keys into segment {}", new_index_entries.len(), next_id);
-
-    // Collect old segment IDs to remove
-    let ids_to_remove: Vec<usize> = store
-        .segments
-        .keys()
-        .copied()
-        .filter(|&id| id < next_id)
-        .collect();
-
-    // Remove old segments from disk
-    for id in &ids_to_remove {
-        let fname = format!("segment-{:04}.dat", id);
-        let path = dir.join(fname);
-
-        if let Err(e) = fs::remove_file(&path) {
-            eprintln!("Warning: Failed to remove old segment {}: {}", id, e);
-        } else {
-            println!("Removed old segment {}", id);
+    for (key, value) in live_data  {
+        let active_seg = store.segments.get_mut(&store.active_id).unwrap();
+        if active_seg.is_full() {
+            store.active_id += 1;
+            let seg = Segment::open(data_dir, store.active_id)?;
+            store.segments.insert(store.active_id, seg);
         }
+        let seg_ref = store.segments.get_mut(&store.active_id).unwrap();
+        let offset = seg_ref.append(key.as_bytes(), &value)?;
+
+        store.index
+            .insert(key, store.active_id, offset, value.len() as u64);
     }
 
-    // Remove old segments from memory
-    for id in &ids_to_remove {
-        store.segments.remove(&id);
-    }
-
-    // Open the new compacted segment
-    let compacted_seg = Segment::open(&dir, next_id)?;
-    store.segments.insert(next_id, compacted_seg);
-    store.active_id = next_id;
-
-    // Update index
-    for (key, seg_id, offset, value_len) in new_index_entries {
-        store.index.insert(key, seg_id, offset, value_len);
-    }
-
-    println!("Compaction complete!");
     Ok(())
-
 }

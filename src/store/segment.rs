@@ -1,6 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Result, Seek, SeekFrom, Write};
-use std::path::PathBuf;
+use std::path::Path;
 
 const SEGMENT_SIZE_LIMIT: u64 = 1024 * 1024; // 1MB
 
@@ -10,7 +10,7 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn open(dir: &PathBuf, id: usize) -> Result<Self> {
+    pub fn open(dir: &Path, id: usize) -> Result<Self> {
         let filename = format!("segment-{}.dat", id);
         let path = dir.join(filename);
         let mut file = OpenOptions::new()
@@ -20,7 +20,7 @@ impl Segment {
             .open(&path)?;
         let len = file.seek(SeekFrom::End(0))?;
         
-        Ok(Segment { 
+        Ok(Self { 
             file, 
             len 
         })
@@ -61,25 +61,20 @@ impl Segment {
 
     pub fn read_record_at(&mut self, offset: u64) -> Result<Option<(String, Option<Vec<u8>>)>> {
         self.file.seek(SeekFrom::Start(offset))?;
-        
         let mut buf8 = [0u8; 8];
-        if let Err(_) = self.file.read_exact(&mut buf8) {
+
+        if self.file.read_exact(&mut buf8).is_err() {
             return Ok(None);
         }
         let key_len = u64::from_le_bytes(buf8);
 
-        if let Err(_) = self.file.read_exact(&mut buf8) {
+        if self.file.read_exact(&mut buf8).is_err() {
             return Ok(None);
         }
         let value_len = u64::from_le_bytes(buf8);
 
         let mut key_buf = vec![0u8; key_len as usize];
-        if let Err(_) = self.file.read_exact(&mut key_buf) {
-            return Ok(None);
-        }
-
-        let mut val_buf = vec![0u8; value_len as usize];
-        if let Err(_) = self.file.read_exact(&mut val_buf) {
+        if self.file.read_exact(&mut key_buf).is_err() {
             return Ok(None);
         }
         let key = String::from_utf8_lossy(&key_buf).to_string();
@@ -96,23 +91,21 @@ impl Segment {
 
     }
 
-    /// Read a value given an offset (must point to the start of a record)
     pub fn read_value_at(&mut self, offset: u64) -> Result<Option<Vec<u8>>> {
         self.file.seek(SeekFrom::Start(offset))?;
         let mut buf8 = [0u8; 8];
-        // read key_len
+
         self.file.read_exact(&mut buf8)?;
         let key_len = u64::from_le_bytes(buf8);
-        // read value_len
+
         self.file.read_exact(&mut buf8)?;
         let value_len = u64::from_le_bytes(buf8);
-        // skip key
+
         let mut key_buf = vec![0u8; key_len as usize];
         self.file.read_exact(&mut key_buf)?;
-        // read value
+
         if value_len == u64::MAX {
-            // tombstone marker
-            Ok(None)
+            Ok(None) // Tombstone
         } else {
             let mut val_buf = vec![0u8; value_len as usize];
             self.file.read_exact(&mut val_buf)?;

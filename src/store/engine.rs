@@ -1,12 +1,11 @@
 use crate::store::config::StoreConfig;
 use crate::store::index::Index;
-use crate::store::record::{RecordHeader, TOMBSTONE_MAKER};
 use crate::store::segment::Segment;
 use crate::store::stats::StoreStats;
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Error, ErrorKind, Result, Seek, SeekFrom};
+use std::io::{Error, ErrorKind, Result};
 use std::path::Path;
 
 
@@ -51,9 +50,9 @@ impl KvStore {
             segments.insert(id, seg);
         }
 
-        if !segments.contains_key(&active_id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = segments.entry(active_id) {
             let seg = Segment::open(&config.data_dir, active_id)?;
-            segments.insert(active_id, seg);
+            e.insert(seg);
         }
 
         let mut store = KvStore {
@@ -68,6 +67,7 @@ impl KvStore {
         Ok(store)
     }
 
+    /// Rebuild in-memory index from all segments
     fn rebuild_index(&mut self) -> Result<()> {
         let mut ordered_ids: Vec<usize> = self.segments.keys().copied().collect();
         ordered_ids.sort_unstable();
@@ -80,49 +80,26 @@ impl KvStore {
             let mut pos = 0u64;
 
             while pos < seg.len {
-                let start_pos = pos;
-
                 match seg.read_record_at(pos) {
                     Ok(Some((key, value_opt))) => {
-                        if let Some(value) = value_opt {
-                            self.index.insert(key, id, pos, value.len() as u64);
+                        if let Some(ref value) = value_opt {
+                            self.index.insert(key.clone(), id, pos, value.len() as u64);
                         } else {
-                            // tombstone
                             self.index.remove(&key);
                         }
 
-                        // Calculate next position
-                        seg.file.seek(SeekFrom::Start(pos))?;
-                        if let Some(header) = RecordHeader::read_from(&mut seg.file)? {
-                            let record_size = RecordHeader::HEADER_SIZE as u64
-                                + header.key_len as u64
-                                + if header.value_len == TOMBSTONE_MAKER {
-                                    0
-                                } else {
-                                    header.value_len as u64
-                                };
-                            pos = start_pos + record_size;
-                        } else {
-                            break;
-                        }
+                        let key_bytes = key.as_bytes();
+
+                        let record_size = 8 + 8 + key_bytes.len() as u64 + value_opt.as_ref().map(|v| v.len() as u64).unwrap_or(0);
+
+                        pos += record_size;
                     }
                     Ok(None) => {
-                        eprintln!(
-                            "Warning: Corrupt record at offset {} in segment {}, stopping rebuild for this segment",
-                            pos, id
-                        );
-                        break;
-                    }
-                    Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-                        eprintln!(
-                            "Warning: Incomplete record at offset {} in segment {}, likely due to crash",
-                            pos, id
-                        );
                         break;
                     }
                     Err(e) => {
                         eprintln!(
-                            "Warning: Error reading record at offset {} in segment {}: {}",
+                            "Failed to read record at position {} in segment {}:{}",
                             pos, id, e
                         );
                         break;
@@ -134,79 +111,99 @@ impl KvStore {
         Ok(())
     }
 
-    fn active_segment_mut(&mut self) -> Result<&mut Segment> {
-        self.segments
-            .get_mut(&self.active_id)
-            .ok_or_else(|| {
-                Error::new(ErrorKind::NotFound, "Active segment not found")
-            })
-    }
-
-    /// Rotate to a new segment if active is full
-    fn maybe_rotate_segment(&mut self) -> Result<()> {
-        if self.active_segment_mut()?.is_full() {
-            let new_id = self.active_id + 1;
-            let new_seq = Segment::open(&self.config.data_dir, new_id)?;
-            self.segments.insert(new_id, new_seq);
-            self.active_id = new_id;
-            println!("Rotated to new segment: {}", new_id);
-        }
-
-        Ok(())
-    }
-
-    /// Set a key -> value
+    /// Set a key-value pair
     pub fn set(&mut self, key: &str, value: &[u8]) -> Result<()> {
-        self.active_segment_mut()?;
+        let active_seg = self
+            .segments
+            .get_mut(&self.active_id)
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "Active segment not found"))?;
 
-        let key_b = key.as_bytes();
-        let offset = self.active_segment_mut()?.append(key_b, value)?;
+        if active_seg.is_full() {
+            self.active_id += 1;
+            let new_seg = Segment::open(&self.config.data_dir, self.active_id)?;
+            self.segments.insert(self.active_id, new_seg);
+        }
 
-        self.index.insert(key.to_string(), self.active_id, offset, value.len() as u64);
+        let active_seg = self.segments
+            .get_mut(&self.active_id)
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "Active segment not found"))?;
+
+        let offset = active_seg.append(key.as_bytes(), value)?;
+
+        self.index
+            .insert(key.to_string(), self.active_id, offset, value.len() as u64);
 
         Ok(())
     }
 
-    /// Get value for key, None if not found
+    /// Get a value by key
     pub fn get(&mut self, key: &str) -> Result<Option<Vec<u8>>> {
-        if let Some((seg_id, offset, _value_len)) = self.index.get(key) {
-            if let Some(seg) = self.segments.get_mut(seg_id) {
-                return seg.read_value_at(*offset);
-            }
+        if let Some(&(seg_id, offset, _value_len)) = self.index.get(key) {
+            let seg = self
+                .segments
+                .get_mut(&seg_id)
+                .ok_or_else(|| Error::new(ErrorKind::NotFound, "Segment not found"))?;
+                
+            seg.read_value_at(offset)
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 
+    /// Delete a key
     pub fn delete(&mut self, key: &str) -> Result<()> {
-        self.maybe_rotate_segment()?;
+        if !self.index.kv_map.contains_key(key) {
+            return Ok(());
+        }
         
-        let key_b = key.as_bytes();
-        self.active_segment_mut()?.append_tombstone(key_b)?;
-        
+        let active_seg = self
+            .segments
+            .get_mut(&self.active_id)
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "Active segment not found"))?;
+
+        if active_seg.is_full() {
+            self.active_id += 1;
+            let new_seg = Segment::open(&self.config.data_dir, self.active_id)?;
+            self.segments.insert(self.active_id, new_seg);
+        }
+
+        let active_seg = self
+            .segments
+            .get_mut(&self.active_id)
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "Active segment not found"))?;
+
+        active_seg.append_tombstone(key.as_bytes())?;
         self.index.remove(key);
 
         Ok(())
     }
 
-    pub fn compact(&mut self) -> Result<()> {
-        use crate::store::compaction::compact_segments;
-        compact_segments(self)
+    /// List all keys in the store
+    pub fn list_keys(&self) -> Vec<String> {
+        self.index.kv_map.keys().cloned().collect()
     }
 
+    /// Get store statistics
     pub fn stats(&self) -> StoreStats {
-        let total_bytes: u64 = self.segments.values().map(|s| s.len).sum();
-        let oldest_id = self.segments.keys().copied().min().unwrap_or(0);
+        let num_keys = self.index.len();
+        let num_segments = self.segments.len();
+
+        let total_bytes = self.segments.values().map(|s| s.len).sum();
+
+        let oldest_segment_id = self.segments.keys().copied().min().unwrap_or(0);
 
         StoreStats { 
-            num_keys: self.index.len(), 
-            num_segments: self.segments.len(), 
+            num_keys, 
+            num_segments, 
             total_bytes, 
-            active_segment_id: self.active_id, 
-            oldest_segment_id: oldest_id
+            active_segment_id: self.active_id,
+            oldest_segment_id,
         }
     }
 
-    pub fn list_keys(&self) -> Vec<String> {
-        self.index.kv_map.keys().cloned().collect()
+    /// Run manual compaction
+    pub fn compact(&mut self) -> Result<()> {
+        use crate::store::compaction::compact_segments;
+        compact_segments(self)
     }
 }
