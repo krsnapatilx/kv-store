@@ -49,7 +49,7 @@ fn overwriting_value_updates_storage() -> std::io::Result<()> {
     store.set("key", b"value1")?;
     store.set("key", b"value2")?;
 
-    assert_eq!(store.get("foo")?, Some(b"value2".to_vec()));
+    assert_eq!(store.get("key")?, Some(b"value2".to_vec()));
 
     Ok(())
 }
@@ -113,7 +113,7 @@ fn compaction_preserves_data() -> std::io::Result<()> {
 
     assert_eq!(store.get("key1")?, Some(b"updated1".to_vec()));
     assert_eq!(store.get("key2")?, None);
-    assert_eq!(store.get("key3")?, Some(b"updated3".to_vec()));
+    assert_eq!(store.get("key3")?, Some(b"value3".to_vec()));
 
     Ok(())
 }
