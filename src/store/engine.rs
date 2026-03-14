@@ -33,7 +33,7 @@ impl KvStore {
             .filter_map(|entry| {
                 let fname = entry.file_name().to_string_lossy().to_string();
                 if fname.starts_with("segment-") && fname.ends_with(".dat") {
-                    fname["segment-".len().."segment-".len() - 4].parse().ok()
+                    fname["segment-".len()..fname.len() - 4].parse().ok()
                 } else {
                     None
                 }
