@@ -54,23 +54,26 @@ fn bench_get(c: &mut Criterion) {
 
 fn bench_compaction(c: &mut Criterion) {
     c.bench_function("compact_1000_keys", |b| {
-        b.iter_with_setup(|| {
-            let test_dir = "bench_data/compact";
-            setup_bench_dir(test_dir);
-            let mut store = KvStore::open(test_dir).unwrap();
+        b.iter_with_setup(
+            || {
+                let test_dir = "bench_data/compact";
+                setup_bench_dir(test_dir);
+                let mut store = KvStore::open(test_dir).unwrap();
 
-            // Write same keys multiple times
-            for round in 0..5 {
-                for i in 0..1000 {
-                    let key = format!("key_{}", i);
-                    let value = format!("value_{}_{}", i, round);
-                    store.set(key.as_str(), value.as_bytes()).unwrap();
+                // Write same keys multiple times
+                for round in 0..5 {
+                    for i in 0..1000 {
+                        let key = format!("key_{}", i);
+                        let value = format!("value_{}_{}", i, round);
+                        store.set(key.as_str(), value.as_bytes()).unwrap();
+                    }
                 }
-            }
-            store
-        }, |mut store| {
-            store.compact().unwrap();
-        });
+                store
+            },
+            |mut store| {
+                store.compact().unwrap();
+            },
+        );
     });
 }
 
