@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use kv_store::KvStore;
 use std::fs::{create_dir_all, remove_dir_all};
 use std::hint::black_box;
