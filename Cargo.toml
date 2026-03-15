@@ -7,6 +7,18 @@ repository = "https://github.com/krsnapatilx/kv-store"
 description = "kv-store — segmented append-only KV store (learning project)"
 license = "MIT"
 
+
+[[bin]]
+name = "kv-store"
+path = "src/main.rs"
+
+[[bench]]
+name = "kvstore_bench"
+harness = false
+
 [dependencies]
 anyhow = "1.0"
 crc32fast = "1.3"
+
+[dev-dependencies]
+criterion = "0.8.2"

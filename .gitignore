@@ -20,3 +20,12 @@ target/
 # -- data segments
 data/
 tests_data/
+
+# -- examples
+/basic_usage
+/compaction
+/large_dataset
+/persistence
+
+# -- benchmark data
+/bench_data
